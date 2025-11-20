@@ -36,17 +36,48 @@ const moment = require('moment');
 const ownerNumber = config.OWNER_NUM;
 
 //===================SESSION-AUTH============================
-if (!fs.existsSync(__dirname + "/session/creds.json")) {
-  if (!config.SESSION_ID)
-    return console.log("Please add your session to SESSION_ID env !!");
-  const sessdata = config.SESSION_ID;
-  const filer = File.fromURL(`https://mega.nz/file/${sessdata}`);
-  filer.download((err, data) => {
-    if (err) throw err;
-    fs.writeFile(__dirname + "/session/creds.json", data, () => {
-      console.log("Session downloaded ✅");
-    });
-  });
+const sessionDir = __dirname + "/session/";
+const credsPath = sessionDir + "creds.json";
+if (!fs.existsSync(credsPath)) {
+  const sessdata = (config.SESSION_ID || "").trim();
+  if (!sessdata || sessdata === "Put your session-id here") {
+    console.log("Please add your session to SESSION_ID env (Mega file id with key or full URL) !!");
+  } else if (sessdata === "DTZ-NOVA-XMD") {
+    console.log("SESSION_ID set to 'DTZ-NOVA-XMD' — skipping Mega download.\nEnsure the './session/creds.json' files are present in the repository or mounted volume.");
+    if (!fs.existsSync(credsPath)) {
+      console.log("Warning: './session/creds.json' not found. The bot may fail to authenticate unless session files are provided.");
+    }
+  } else {
+    // The megajs File.fromURL requires a URL that includes the decryption key (hash) after '#'
+    // Accept either a full mega URL (https://mega.nz/file/<id>#<key>) or the '<id>#<key>' part.
+    const hasHash = sessdata.includes("#");
+    const url = sessdata.startsWith("http") ? sessdata : `https://mega.nz/file/${sessdata}`;
+    if (!hasHash && !url.includes("#")) {
+      console.log("SESSION_ID appears invalid: Mega URL must include the file key (the part after '#').");
+      console.log("Provide the full value like '<file_id>#<file_key>' or the full URL 'https://mega.nz/file/<id>#<key>' in SESSION_ID.");
+    } else {
+      try {
+        const filer = File.fromURL(url);
+        filer.download((err, data) => {
+          if (err) {
+            console.error("Failed to download session from Mega:", err && err.message ? err.message : err);
+            return;
+          }
+          try {
+            fs.mkdirSync(sessionDir, { recursive: true });
+            fs.writeFile(credsPath, data, (werr) => {
+              if (werr) return console.error("Failed to write session file:", werr);
+              console.log("Session downloaded ✅");
+            });
+          } catch (fsErr) {
+            console.error("Filesystem error while saving session:", fsErr);
+          }
+        });
+      } catch (e) {
+        console.error("Error while initializing Mega download:", e && e.message ? e.message : e);
+      }
+    }
+  }
 }
 
 const express = require("express");
